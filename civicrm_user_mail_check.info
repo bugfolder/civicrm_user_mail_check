@@ -1,0 +1,7 @@
+name = CiviCRM User Mail Check
+description = Implements error-checking on attempted email address changes.
+dependencies[] = civicrm
+package = CiviCRM - OrigamiUSA
+backdrop = 1.x
+type = module
+version = 1.x-1.0

@@ -1,0 +1,80 @@
+<?php
+/**
+ * @file
+ * CiviCRM User Mail Check module file
+ *
+ * Implements error-checking when someone attempts to change the email address
+ * in a way that would create a mismatch with a Backdrop user account.
+ */
+
+
+/**
+ * Implements hook_civicrm_validateForm() for forms that alter contact email address().
+ */
+function civicrm_user_mail_check_civicrm_validateForm($formName, &$fields, &$files, &$form, &$errors) {
+  if ($formName == 'CRM_Contact_Form_Contact' ||
+    $formName == 'CRM_Contact_Form_Inline_Email') {
+    $cid = $form->_contactId;
+    $emails = $fields['email'];
+    foreach ($emails as $index => $record) {
+      if (isset($record['is_primary']) && $record['is_primary']) {
+        $email = $record['email'];
+        $error_info = array();
+        if (!_civicrm_user_mail_check_can_change($cid, $email, $error_info)) {
+          // There's a problem, so set an error.
+          $errors["email[{$index}][email]"] = $error_info['error_message'];
+        }
+      }
+    }
+  }
+}
+
+
+/**
+ * Check whether it's OK to change contact primary email to this value.
+ * Return TRUE if OK to change, otherwise fill $error_info with information
+ * about what's wrong. Note that $cid == 0 for new contacts.
+ */
+function _civicrm_user_mail_check_can_change($cid, $email, &$error_info) {
+
+  $current_result = array();
+  if ($cid) {
+    // First, we find out if this contact has a Backdrop user account.
+    $result = civicrm_api3('UFMatch', 'get', [
+      'contact_id' => $cid,
+    ]);
+    if ($result['count'] == 0) {
+      // this contact has no Backdrop user ID, so it's OK to change.
+      return TRUE;
+    }
+    else {
+      $current_result = $result['values'][$result['id']];
+    }
+  }
+
+  // See if there's an existing Backdrop user account with the new email.
+  $result = civicrm_api3('UFMatch', 'get', [
+    'uf_name' -> $email,
+  ]);
+  if ($result['count'] == 0) {
+    // There's no Backdrop user with this email, so it's OK to change.
+    return TRUE;
+  }
+  $blocking_result = $result['values'][$result['id']];
+
+  if ($blocking_result['contact_id'] == $cid) {
+    // If the existing user account is us, then it's OK because we're keeping
+    // the email the same.
+    return TRUE;
+  }
+
+  // If we're here, then we have a problem.
+  $error_message = ts('You cannot change the email address of this contact to %1 because there is already a user account (with user ID %2) that is using this address.<br> You should either merge the user accounts to eliminate the blocking user account or choose a different email address.',
+    array('%1' => $email, '%2' => $blocking_result['uf_id']));
+  $error_info = array(
+    'current_result' => $current_result,
+    'blocking_result' => $blocking_result,
+    'error_message' => $error_message,
+  );
+  return FALSE;
+}
